@@ -576,14 +576,17 @@
     Base.@propagate_inbounds Base.getindex(A::SizedMatrix, i...) = getindex(parent(A), i...)
     Base.@propagate_inbounds Base.setindex!(A::SizedMatrix, v, i...) = setindex!(parent(A), v, i...)
     Base.size(::SizedMatrix{M,N}) where {M,N} = (M,N)
-    @inline function LoopVectorization.stridedpointer(A::SizedMatrix{M,N,T}) where {M,N,T}
-        LoopVectorization.StaticStridedPointer{T,Tuple{1,M}}(pointer(parent(A)))
+    @generated function LoopVectorization.stridedpointer(A::SizedMatrix{M,N,T}) where {M,N,T}
+        st = sizeof(Float64)
+        :(LoopVectorization.StaticStridedPointer{$T,Tuple{$st,$(st*M)}}(pointer(parent(A))))
     end
-    @inline function LoopVectorization.stridedpointer(A::LinearAlgebra.Adjoint{T,SizedMatrix{M,N,T}}) where {M,N,T}
-        LoopVectorization.StaticStridedPointer{T,Tuple{M,1}}(pointer(parent(A).data))
+    @generated function LoopVectorization.stridedpointer(A::LinearAlgebra.Adjoint{T,SizedMatrix{M,N,T}}) where {M,N,T}
+        st = sizeof(Float64)
+        :(LoopVectorization.StaticStridedPointer{$T,Tuple{$(st*M),$st}}(pointer(parent(A).data)))
     end
-    @inline function LoopVectorization.stridedpointer(A::LinearAlgebra.Transpose{T,SizedMatrix{M,N,T}}) where {M,N,T}
-        LoopVectorization.StaticStridedPointer{T,Tuple{M,1}}(pointer(parent(A).data))
+    @generated function LoopVectorization.stridedpointer(A::LinearAlgebra.Transpose{T,SizedMatrix{M,N,T}}) where {M,N,T}
+        st = sizeof(Float64)
+        :(LoopVectorization.StaticStridedPointer{$T,Tuple{$(st*M),$st}}(pointer(parent(A).data)))
     end
     LoopVectorization.maybestaticsize(::SizedMatrix{M,N}, ::Val{1}) where {M,N} = LoopVectorization.Static{M}()
     LoopVectorization.maybestaticsize(::SizedMatrix{M,N}, ::Val{2}) where {M,N} = LoopVectorization.Static{N}()

@@ -12,7 +12,7 @@ struct OffsetStridedPointer{T, N, P <: VectorizationBase.AbstractStridedPointer{
 end
 # if ndim(A::OffsetArray) ≥ 2, then eachindex(A) isa Base.OneTo, index starting at 1.
 # but multiple indexing is calculated using offsets, so we need a special type to express this.
-@inline function VectorizationBase.stridedpointer(A::OffsetArrays.OffsetArray)
+@inline function VectorizationBase.stridedpointer(A::OffsetArrays.OffsetArray{T}) where {T}
     OffsetStridedPointer(stridedpointer(parent(A)), VectorizationBase.staticm1(A.offsets))
 end
 

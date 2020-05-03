@@ -91,10 +91,12 @@ T = Float64
     Base.axes(::SizedOffsetMatrix{T,LR,UR,LC,UC}) where {T,LR,UR,LC,UC} = (StaticUnitRange{LR,UR}(),StaticUnitRange{LC,UC}())
     Base.parent(A::SizedOffsetMatrix) = A.data
     @generated function LoopVectorization.stridedpointer(A::SizedOffsetMatrix{T,LR,UR,LC,RC}) where {T,LR,UR,LC,RC}
+        X1 = sizeof(T)
+        X2 = sizeof(T) * (UR-LR+1)
         quote
             $(Expr(:meta,:inline))
             LoopVectorization.OffsetStridedPointer(
-                LoopVectorization.StaticStridedPointer{$T,Tuple{1,$(UR-LR+1)}}(pointer(parent(A))),
+                LoopVectorization.StaticStridedPointer{$T,Tuple{$X1,$X2}}(pointer(parent(A))),
                 ($(LR-2), $(LC-2))
             )
         end

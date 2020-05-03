@@ -2,6 +2,7 @@
 if (Base.libllvm_version ≥ v"7" && VectorizationBase.AVX512F) || Base.libllvm_version ≥ v"9"
     function vfilter!(f::F, x::Vector{T}, y::AbstractArray{T}) where {F,T <: NativeTypes}
         W, Wshift = VectorizationBase.pick_vector_width_shift(T)
+        WT = VectorizationBase.REGISTER_SIZE
         N = length(y)
         Nrep = N >>> Wshift
         Nrem = N & (W - 1)
@@ -14,11 +15,11 @@ if (Base.libllvm_version ≥ v"7" && VectorizationBase.AVX512F) || Base.libllvm_
                 vy = vload(Vec{W,T}, ptr_y, i)
                 mask = f(SVec(vy))
                 SIMDPirates.compressstore!(gep(ptr_x, j), vy, mask)
-                i += W
+                i += WT
                 j += count_ones(mask)
             end
             rem_mask = VectorizationBase.mask(T, Nrem)
-            vy = vload(Vec{W,T}, gep(ptr_y, i), rem_mask)
+            vy = vload(Vec{W,T}, ptr_y, i, rem_mask)
             mask = rem_mask & f(SVec(vy))
             SIMDPirates.compressstore!(gep(ptr_x, j), vy, mask)
             j += count_ones(mask)

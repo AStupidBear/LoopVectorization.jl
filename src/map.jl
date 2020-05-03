@@ -1,10 +1,11 @@
 # Expression-generator for vmap!
 function vmap_quote(N, ::Type{T}) where {T}
     W, Wshift = VectorizationBase.pick_vector_width_shift(T)
+    WT = VectorizationBase.REGISTER_SIZE
     val = Expr(:call, Expr(:curly, :Val, W))
     q = Expr(:block, Expr(:(=), :M, Expr(:call, :length, :dest)), Expr(:(=), :vdest, Expr(:call, :pointer, :dest)), Expr(:(=), :m, 0))
     fcall = Expr(:call, :f)
-    loopbody = Expr(:block, Expr(:call, :vstore!, :vdest, fcall, :m), Expr(:(+=), :m, W))
+    loopbody = Expr(:block, Expr(:call, :vstore!, :vdest, fcall, :m), Expr(:(+=), :m, WT))
     fcallmask = Expr(:call, :f)
     bodymask = Expr(:block, Expr(:(=), :__mask__, Expr(:call, :mask, val, Expr(:call, :&, :M, W-1))), Expr(:call, :vstore!, :vdest, fcallmask, :m, :__mask__))
     for n ∈ 1:N
@@ -13,9 +14,9 @@ function vmap_quote(N, ::Type{T}) where {T}
         push!(fcall.args, Expr(:call, :vload, val, arg_n, :m))
         push!(fcallmask.args, Expr(:call, :vload, val, arg_n, :m, :__mask__))
     end
-    loop = Expr(:for, Expr(:(=), :_, Expr(:call, :(:), 0, Expr(:call, :-, Expr(:call, :(>>>), :M, Wshift), 1))), loopbody)
+    loop = Expr(:for, Expr(:(=), :_, Expr(:call, :(:), 1, Expr(:call, :(>>>), :M, Wshift))), loopbody)
     push!(q.args, loop)
-    ifmask = Expr(:if, Expr(:call, :(!=), :m, :M), bodymask)
+    ifmask = Expr(:if, Expr(:call, :(!=), :m, Expr(:call, :<<, :M, VectorizationBase.intlog2(sizeof(T)))), bodymask)
     push!(q.args, ifmask)
     push!(q.args, :dest)
     q
@@ -113,16 +114,18 @@ function vmapnt!(f::F, y::AbstractVector{T}, args::Vararg{<:Any,A}) where {F,T,A
     i = 0
     W = VectorizationBase.pick_vector_width(T)
     V = VectorizationBase.pick_vector_width_val(T)
+    WT = VectorizationBase.REGISTER_SIZE
     while i < N - ((W << 2) - 1)
-        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += W
-        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += W
-        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += W
-        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += W
+        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += WT
+        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += WT
+        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += WT
+        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += WT
     end
-    while i < N - (W - 1) # stops at 16 when
-        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += W
+    NT = N * sizeof(T)
+    while i < NT - (WT - 1) # stops at 16 when
+        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += WT
     end
-    if i < N
+    if i < NT
         m = mask(T, N & (W - 1))
         vstore!(ptry, extract_data(f(vload.(V, ptrargs, i, m)...)), i, m)
     end
@@ -141,18 +144,21 @@ function vmapntt!(f::F, y::AbstractVector{T}, args::Vararg{<:Any,A}) where {F,T,
     V = VectorizationBase.pick_vector_width_val(T)
     Wsh = Wshift + 2
     Niter = N >>> Wsh
+    Wsh += VectorizationBase.intlog2(sizeof(T))
+    WT = VectorizationBase.REGISTER_SIZE
     Base.Threads.@threads for j ∈ 0:Niter-1
         i = j << Wsh
-        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += W
-        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += W
-        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += W
+        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += WT
+        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += WT
+        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i); i += WT
         vstorent!(ptry, extract_data(f(vload.(V, ptrargs, i)...)), i)
     end
     ii = Niter << Wsh
-    while ii < N - (W - 1) # stops at 16 when
-        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, ii)...)), ii); ii += W
+    NT = N * sizeof(T)
+    while ii < NT - (WT - 1) # stops at 16 when
+        vstorent!(ptry, extract_data(f(vload.(V, ptrargs, ii)...)), ii); ii += WT
     end
-    if ii < N
+    if ii < NT * sizeof(T)
         m = mask(T, N & (W - 1))
         vstore!(ptry, extract_data(f(vload.(V, ptrargs, ii, m)...)), ii, m)
     end
